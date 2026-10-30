@@ -1,6 +1,7 @@
 package com.cymylive.trianglelog.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,9 +16,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,12 +34,14 @@ import androidx.compose.ui.unit.sp
 import com.cymylive.trianglelog.data.Dates
 import com.cymylive.trianglelog.data.Goal
 
-private data class TimelineRow(val date: String, val goal: Goal?, val done: Boolean, val note: String)
+private data class TimelineRow(val date: String, val goal: Goal?, val done: Boolean, val note: String, val goalId: String)
 
 @Composable
 fun TimelineScreen(state: AppState) {
     val goals = state.activeGoals
     var filter by remember { mutableStateOf<String?>(null) }
+    var detail by remember { mutableStateOf<TimelineRow?>(null) }
+    var deleting by remember { mutableStateOf<TimelineRow?>(null) }
 
     val rows = remember(state.data, filter) {
         val recs = state.data.records
@@ -46,7 +51,7 @@ fun TimelineScreen(state: AppState) {
         byDate.forEach { (date, list) ->
             list.sortedByDescending { it.updatedAt }.forEach { r ->
                 val g = state.data.goals.firstOrNull { it.id == r.goalId }
-                out.add(TimelineRow(date, g, r.done, r.note))
+                out.add(TimelineRow(date, g, r.done, r.note, r.goalId))
             }
         }
         out
@@ -54,7 +59,10 @@ fun TimelineScreen(state: AppState) {
 
     Column(Modifier.fillMaxSize().padding(20.dp)) {
         Text("我的记录", color = TextMain, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(6.dp))
+        Text("共 " + rows.size.toString() + " 条 · 点击可查看或删除", color = TextSub, fontSize = 12.sp)
+        Spacer(Modifier.height(12.dp))
+
         Row {
             Chip("全部", filter == null) { filter = null }
             goals.forEach { g ->
@@ -69,11 +77,73 @@ fun TimelineScreen(state: AppState) {
         } else {
             LazyColumn {
                 items(rows) { row ->
-                    RowItem(row)
+                    RowItem(row, onClick = { detail = row })
                     Spacer(Modifier.height(12.dp))
                 }
             }
         }
+    }
+
+    detail?.let { row ->
+        AlertDialog(
+            onDismissRequest = { detail = null },
+            containerColor = Surface1,
+            title = { Text(Dates.pretty(row.date), color = TextMain) },
+            text = {
+                Column {
+                    Text(
+                        row.goal?.name ?: "已删除的目标",
+                        color = Accent, fontSize = 14.sp, fontWeight = FontWeight.Medium
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        if (row.goal != null && row.goal.dailyAction.isNotBlank()) row.goal.dailyAction else "",
+                        color = TextMain, fontSize = 14.sp
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        if (row.done) "状态：已完成" else "状态：未完成",
+                        color = if (row.done) Accent else Danger, fontSize = 13.sp
+                    )
+                    if (row.note.isNotBlank()) {
+                        Spacer(Modifier.height(10.dp))
+                        Text("卡在：" + row.note, color = TextSub, fontSize = 13.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    deleting = row
+                    detail = null
+                }) { Text("删除这条", color = Danger) }
+            },
+            dismissButton = {
+                TextButton(onClick = { detail = null }) { Text("关闭", color = TextSub) }
+            }
+        )
+    }
+
+    deleting?.let { row ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            containerColor = Surface1,
+            title = { Text("删除这条记录？", color = TextMain) },
+            text = {
+                Text(
+                    "将删除 " + Dates.pretty(row.date) + " 的这条记录，不可撤销。",
+                    color = TextMain, fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.deleteRecord(row.date, row.goalId)
+                    deleting = null
+                }) { Text("确认删除", color = Danger) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleting = null }) { Text("取消", color = TextSub) }
+            }
+        )
     }
 }
 
@@ -93,8 +163,13 @@ private fun Chip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun RowItem(row: TimelineRow) {
-    Row(Modifier.fillMaxWidth().background(Surface1, RoundedCornerShape(14.dp)).padding(14.dp)) {
+private fun RowItem(row: TimelineRow, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth()
+            .background(Surface1, RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(14.dp)
+    ) {
         Box(
             Modifier.padding(top = 6.dp).size(10.dp).background(
                 if (row.done) Accent else Surface2, CircleShape
