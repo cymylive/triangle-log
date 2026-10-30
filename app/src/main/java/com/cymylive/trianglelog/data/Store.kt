@@ -50,6 +50,12 @@ object Store {
         tmp.renameTo(f)
     }
 
+    /** 外部直接改了文件后，清掉内存缓存，强制下次重新读盘 */
+    @Synchronized
+    fun invalidate() {
+        cached = null
+    }
+
     /** 导出用：直接给 JSON 文本 */
     fun exportJson(context: Context): String =
         json.encodeToString(AppData.serializer(), load(context))
