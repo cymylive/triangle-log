@@ -2,15 +2,23 @@ package com.cymylive.trianglelog.web
 
 import android.content.Context
 import com.cymylive.trianglelog.data.Dates
+import com.cymylive.trianglelog.data.Importer
 import com.cymylive.trianglelog.data.Logic
 import com.cymylive.trianglelog.data.Store
 import fi.iki.elonen.NanoHTTPD
+import java.io.ByteArrayOutputStream
 
-/** 局域网只读服务：电脑浏览器打开 http://手机IP:8765 即可查看与导出 */
+/** 局域网服务：可查看、导出，也可上传备份导入 */
 class LocalWebServer(private val appContext: Context, port: Int = 8765) : NanoHTTPD(port) {
 
     override fun serve(session: IHTTPSession): Response {
         val uri = session.uri ?: "/"
+        val method = session.method
+
+        if (uri == "/api/import" && method == Method.POST) {
+            return handleImport(session)
+        }
+
         return when (uri) {
             "/", "/index.html" -> newFixedLengthResponse(
                 Response.Status.OK, "text/html; charset=utf-8", htmlPage()
@@ -26,6 +34,29 @@ class LocalWebServer(private val appContext: Context, port: Int = 8765) : NanoHT
                 resp
             }
             else -> newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "Not Found")
+        }
+    }
+
+    private fun handleImport(session: IHTTPSession): Response {
+        return try {
+            val files = HashMap<String, String>()
+            val body = HashMap<String, String>()
+            session.parseBody(files)
+            val raw = files["postData"]
+                ?: files.values.firstOrNull()
+                ?: ""
+            if (raw.isBlank()) {
+                return newFixedLengthResponse(Response.Status.OK, "text/plain; charset=utf-8", "EMPTY")
+            }
+            val err = Importer.importFromText(appContext, raw)
+            Store.invalidate()
+            if (err == null) {
+                newFixedLengthResponse(Response.Status.OK, "text/plain; charset=utf-8", "OK")
+            } else {
+                newFixedLengthResponse(Response.Status.OK, "text/plain; charset=utf-8", "ERR " + err)
+            }
+        } catch (e: Exception) {
+            newFixedLengthResponse(Response.Status.OK, "text/plain; charset=utf-8", "ERR " + (e.message ?: ""))
         }
     }
 
@@ -48,9 +79,10 @@ class LocalWebServer(private val appContext: Context, port: Int = 8765) : NanoHT
         sb.append(".row:last-child{border-bottom:none;}")
         sb.append(".done{color:#7bd88f;}.miss{color:#e57373;}")
         sb.append(".muted{color:#9a9a9a;font-size:13px;}")
-        sb.append(".btn{display:inline-block;background:#7bd88f;color:#0d1f12;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:bold;margin-top:12px;}")
+        sb.append(".btn{display:inline-block;background:#7bd88f;color:#0d1f12;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:bold;margin-top:12px;cursor:pointer;border:none;font-size:14px;}")
+        sb.append(".btn2{background:#2a2a2a;color:#ededed;}")
         sb.append("</style></head><body>")
-        sb.append("<h1>三角日志</h1><h2>只读视图 · 数据在手机上</h2>")
+        sb.append("<h1>三角日志</h1><h2>局域网视图 · 数据在手机上</h2>")
 
         sb.append("<div class=\"card\">")
         sb.append("<div class=\"row\"><span>累计记录</span><span>").append(stats.totalDays).append(" 天</span></div>")
@@ -89,8 +121,27 @@ class LocalWebServer(private val appContext: Context, port: Int = 8765) : NanoHT
         }
         sb.append("</div>")
 
+        sb.append("<div class=\"card\">")
+        sb.append("<div class=\"muted\" style=\"margin-bottom:8px\">备份</div>")
         sb.append("<a class=\"btn\" href=\"/api/export\">导出备份 JSON</a>")
-        sb.append("<p class=\"muted\" style=\"margin-top:20px\">手机与电脑需在同一 WiFi。数据只读，修改请在手机上操作。</p>")
+        sb.append("<div style=\"height:12px\"></div>")
+        sb.append("<input type=\"file\" id=\"f\" accept=\".json,application/json\" style=\"color:#9a9a9a;font-size:13px\">")
+        sb.append("<div style=\"height:8px\"></div>")
+        sb.append("<button class=\"btn btn2\" onclick=\"up()\">上传备份导入</button>")
+        sb.append("<div id=\"r\" class=\"muted\" style=\"margin-top:10px\"></div>")
+        sb.append("</div>")
+
+        sb.append("<script>")
+        sb.append("async function up(){var f=document.getElementById('f');var el=document.getElementById('r');")
+        sb.append("if(!f.files.length){el.textContent='请先选择备份文件';return;}")
+        sb.append("if(!confirm('导入会覆盖手机上的全部数据，确定吗？'))return;")
+        sb.append("el.textContent='上传中...';")
+        sb.append("try{var t=await f.files[0].text();var res=await fetch('/api/import',{method:'POST',body:t});var s=await res.text();")
+        sb.append("if(s==='OK'){el.textContent='导入成功，正在刷新...';setTimeout(function(){location.reload();},1200);}")
+        sb.append("else{el.textContent='导入失败：'+s;}}catch(e){el.textContent='出错：'+e;}}")
+        sb.append("</script>")
+
+        sb.append("<p class=\"muted\" style=\"margin-top:20px\">手机与电脑需在同一 WiFi。导入会覆盖手机数据，操作前手机端会自动留一份旧备份。</p>")
         sb.append("</body></html>")
         return sb.toString()
     }
