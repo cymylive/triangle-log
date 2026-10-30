@@ -1,7 +1,7 @@
 package com.cymylive.trianglelog.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,7 +16,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -34,8 +33,12 @@ import com.cymylive.trianglelog.data.Goal
 
 @Composable
 fun GoalsScreen(state: AppState) {
-    var showAdd by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<Goal?>(null) }
+    var creating by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf<Goal?>(null) }
+
     val goals = state.activeGoals
+    val archived = state.archivedGoals
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
         Text("我的目标", color = TextMain, fontSize = 28.sp, fontWeight = FontWeight.Bold)
@@ -47,30 +50,91 @@ fun GoalsScreen(state: AppState) {
         }
 
         goals.forEach { g ->
-            GoalItem(g)
+            GoalItem(
+                g = g,
+                onEdit = { editing = g },
+                onDelete = { deleting = g },
+                onArchive = { state.archiveGoal(g.id) }
+            )
             Spacer(Modifier.height(14.dp))
         }
 
         Button(
-            onClick = { showAdd = true },
+            onClick = { creating = true },
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Bg)
         ) { Text("新建目标", fontWeight = FontWeight.Bold) }
+
+        if (archived.isNotEmpty()) {
+            Spacer(Modifier.height(28.dp))
+            Text("已归档", color = TextSub, fontSize = 13.sp)
+            Spacer(Modifier.height(10.dp))
+            archived.forEach { g ->
+                Row(
+                    Modifier.fillMaxWidth().background(Surface1, RoundedCornerShape(12.dp)).padding(14.dp)
+                ) {
+                    Column(Modifier.fillMaxWidth()) {
+                        Text(g.name, color = TextSub, fontSize = 14.sp)
+                        Spacer(Modifier.height(6.dp))
+                        TextButton(onClick = { state.unarchiveGoal(g.id) }) {
+                            Text("恢复", color = Accent, fontSize = 13.sp)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+        }
     }
 
-    if (showAdd) {
-        AddGoalDialog(
-            onDismiss = { showAdd = false },
+    if (creating) {
+        GoalEditDialog(
+            initial = null,
+            onDismiss = { creating = false },
             onConfirm = { name, big, due, week, daily ->
                 state.addGoal(name, big, due, week, daily)
-                showAdd = false
+                creating = false
+            }
+        )
+    }
+
+    editing?.let { g ->
+        GoalEditDialog(
+            initial = g,
+            onDismiss = { editing = null },
+            onConfirm = { name, big, due, week, daily ->
+                state.updateGoal(g.copy(name = name, bigGoal = big, dueDate = due, weekTarget = week, dailyAction = daily))
+                editing = null
+            }
+        )
+    }
+
+    deleting?.let { g ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            containerColor = Surface1,
+            title = { Text("删除目标？", color = TextMain) },
+            text = {
+                Column {
+                    Text("将删除「" + g.name + "」以及它的全部记录。", color = TextMain, fontSize = 14.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Text("此操作不可撤销。如果只是暂时不想做，建议用「归档」。", color = TextSub, fontSize = 13.sp)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.deleteGoal(g.id)
+                    deleting = null
+                }) { Text("确认删除", color = Danger) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleting = null }) { Text("取消", color = TextSub) }
             }
         )
     }
 }
 
 @Composable
-private fun GoalItem(g: Goal) {
+private fun GoalItem(g: Goal, onEdit: () -> Unit, onDelete: () -> Unit, onArchive: () -> Unit) {
     Column(
         Modifier.fillMaxWidth().background(Surface1, RoundedCornerShape(16.dp)).padding(16.dp)
     ) {
@@ -93,24 +157,33 @@ private fun GoalItem(g: Goal) {
             Text("日动作", color = TextSub, fontSize = 12.sp)
             Text(g.dailyAction, color = TextMain, fontSize = 14.sp)
         }
+        Spacer(Modifier.height(10.dp))
+        Row {
+            TextButton(onClick = onEdit) { Text("编辑", color = Accent, fontSize = 13.sp) }
+            Spacer(Modifier.width(4.dp))
+            TextButton(onClick = onArchive) { Text("归档", color = TextSub, fontSize = 13.sp) }
+            Spacer(Modifier.width(4.dp))
+            TextButton(onClick = onDelete) { Text("删除", color = Danger, fontSize = 13.sp) }
+        }
     }
 }
 
 @Composable
-private fun AddGoalDialog(
+private fun GoalEditDialog(
+    initial: Goal?,
     onDismiss: () -> Unit,
     onConfirm: (String, String, String, String, String) -> Unit
 ) {
-    var name by remember { mutableStateOf("") }
-    var big by remember { mutableStateOf("") }
-    var due by remember { mutableStateOf("") }
-    var week by remember { mutableStateOf("") }
-    var daily by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf(initial?.name ?: "") }
+    var big by remember { mutableStateOf(initial?.bigGoal ?: "") }
+    var due by remember { mutableStateOf(initial?.dueDate ?: "") }
+    var week by remember { mutableStateOf(initial?.weekTarget ?: "") }
+    var daily by remember { mutableStateOf(initial?.dailyAction ?: "") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Surface1,
-        title = { Text("新建目标", color = TextMain) },
+        title = { Text(if (initial == null) "新建目标" else "编辑目标", color = TextMain) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Field("目标名（如：教资上岸）", name) { name = it }
@@ -126,9 +199,11 @@ private fun AddGoalDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { if (name.isNotBlank()) onConfirm(name.trim(), big.trim(), due.trim(), week.trim(), daily.trim()) },
+                onClick = {
+                    if (name.isNotBlank()) onConfirm(name.trim(), big.trim(), due.trim(), week.trim(), daily.trim())
+                },
                 enabled = name.isNotBlank()
-            ) { Text("创建", color = Accent) }
+            ) { Text(if (initial == null) "创建" else "保存", color = Accent) }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("取消", color = TextSub) }
