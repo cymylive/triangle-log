@@ -9,6 +9,7 @@ import com.cymylive.trianglelog.data.AppData
 import com.cymylive.trianglelog.data.Dates
 import com.cymylive.trianglelog.data.DayRecord
 import com.cymylive.trianglelog.data.Goal
+import com.cymylive.trianglelog.data.Importer
 import com.cymylive.trianglelog.data.Store
 import java.util.UUID
 
@@ -31,6 +32,16 @@ class AppState(app: Application) : AndroidViewModel(app) {
 
     fun reload() {
         data = Store.load(ctx)
+    }
+
+    /** 从备份文本导入，成功返回 null，失败返回错误信息 */
+    fun importFromText(text: String): String? {
+        val err = Importer.importFromText(ctx, text)
+        if (err == null) {
+            Store.invalidate()
+            data = Store.load(ctx)
+        }
+        return err
     }
 
     // ---------- 目标 ----------
