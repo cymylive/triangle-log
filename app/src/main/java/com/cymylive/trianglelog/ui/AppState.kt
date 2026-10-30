@@ -24,6 +24,7 @@ class AppState(app: Application) : AndroidViewModel(app) {
     val today: String get() = Dates.today()
 
     val activeGoals: List<Goal> get() = data.goals.filter { !it.archived }
+    val archivedGoals: List<Goal> get() = data.goals.filter { it.archived }
 
     private fun commit(newData: AppData) {
         data = newData
@@ -67,6 +68,23 @@ class AppState(app: Application) : AndroidViewModel(app) {
         commit(data.copy(goals = data.goals.map { if (it.id == id) it.copy(archived = true) else it }))
     }
 
+
+    fun deleteGoal(id: String) {
+        commit(data.copy(
+            goals = data.goals.filter { it.id != id },
+            records = data.records.filter { it.goalId != id }
+        ))
+    }
+
+    fun deleteRecord(date: String, goalId: String) {
+        commit(data.copy(
+            records = data.records.filterNot { it.date == date && it.goalId == goalId }
+        ))
+    }
+
+    fun unarchiveGoal(id: String) {
+        commit(data.copy(goals = data.goals.map { if (it.id == id) it.copy(archived = false) else it }))
+    }
     // ---------- 每日记录 ----------
 
     fun recordFor(date: String, goalId: String): DayRecord? =
